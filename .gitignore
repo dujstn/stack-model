@@ -1,3 +1,4 @@
-/Include
-/Lib
-/Scripts
+test/
+train/
+val/
+labels/
