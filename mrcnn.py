@@ -1,4 +1,6 @@
 from __future__ import annotations
+from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 import random
 import torchvision.models.detection
@@ -40,7 +42,7 @@ def loadData(imgs: list[str], start: int, end: int, imgSize: list[int] = [600, 6
     batch_imgs = []
     batch_data = []
 
-    for i in range(start, end):
+    for i in range(start, min(end, len(imgs))):
 
         # Read and resize image to correct dimensions
 
@@ -57,9 +59,9 @@ def loadData(imgs: list[str], start: int, end: int, imgSize: list[int] = [600, 6
         # Build binding box record of dimension [len(masks), 4] (x, y, x + w, y + h)
         num_boxes = len(masks)
         boxes = torch.zeros([num_boxes, 4], dtype=torch.float32)
-        for i in range(num_boxes):
-            x, y, w, h = cv.boundingRect(masks[i])
-            boxes[i] = torch.tensor([x, y, x + w, y + h])
+        for j in range(num_boxes):
+            x, y, w, h = cv.boundingRect(masks[j])
+            boxes[j] = torch.tensor([x, y, x + w, y + h])
 
         # Compile image, label mask, and mask bounding boxes into one package
         data = {}
@@ -81,15 +83,13 @@ def trainModel(device, model, imgs, batchSize=4, epochs=1):
     """
     Prepares and trains the provided model on the given images
     """
-    # in_features = model.roi_heads.box_predictor.cls_score.in_features
-
-    # model.roi_heads.box_predictor = FastRCNNPredictor(
-    #     in_features, num_classes=25)
+    model.load_state_dict(torch.load('t1/e14.torch'))
     model.to(device)
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-5)
     model.train()
 
-    for e in range(epochs):
+    for e in range(15, epochs):
+        random.shuffle(imgs)
         for i in range(0, len(imgs), batchSize):
             images, targets = loadData(imgs, i, i + batchSize)
             images = list(image.to(device) for image in images)
@@ -104,9 +104,18 @@ def trainModel(device, model, imgs, batchSize=4, epochs=1):
             optimizer.step()
 
             print(i, 'loss:', losses.item())
-            if i % 40 == 0:
-                torch.save(model.state_dict(), f't4/e{e}s{str(i)}.torch')
-                print("Save model to:", f'./t4/e{e}s{str(i)}.torch')
+            if i % 140 == 0:
+                torch.save(model.state_dict(), f't1/e{e}s{str(i)}.torch')
+                print("Save model to:", f'./t1/e{e}s{str(i)}.torch')
+
+                model.eval()
+                with torch.no_grad():
+                    pred = model(images)
+                print(pred)
+                model.train()
+
+        torch.save(model.state_dict(), f't1/e{e}.torch')
+        print(f'Finished epoch {e}')
 
 
 def evalModel(device, model, label_ref):
@@ -116,15 +125,16 @@ def evalModel(device, model, label_ref):
     # model.roi_heads.box_predictor = FastRCNNPredictor(
     #     in_features, num_classes=25)
 
-    model.load_state_dict(torch.load('trainthreeresult/700.torch'))
+    model.load_state_dict(torch.load('t1/e14.torch'))
     model.to(device)
     model.eval()
 
-    images = cv.imread('test/116022_slide-012.jpg')
-    images = cv.resize(images, (600, 600), cv.INTER_LINEAR)
+    images = cv.imread('train/3561_slide-083.jpg')
+    # images = cv.imread('test/1317440_slide-011.jpg')
+    # images = cv.resize(images, (600, 600), cv.INTER_LINEAR)
     images = torch.as_tensor(images, dtype=torch.float32).unsqueeze(0)
     images = images.swapaxes(1, 3).swapaxes(2, 3)
-    images = list(image.to(device) for image in images)
+    images = [image.to(device) for image in images]
 
     with torch.no_grad():
         pred = model(images)
@@ -135,14 +145,12 @@ def evalModel(device, model, label_ref):
     for i in range(len(pred[0]['masks'])):
         msk = pred[0]['masks'][i, 0].detach().cpu().numpy()
         scr = pred[0]['scores'][i].detach().cpu().numpy()
-        lab = pred[0]['labels'][i].detach().cpu().numpy()
-        # print(pred[0]['classes'][i].detach().cpu().numpy())
+        lab = int(pred[0]['labels'][i].detach().cpu().numpy())
         if scr > 0.5:
-            print(im2[:, :, 0][msk > 0.5])
             im2[:, :, 0][msk > 0.5] = random.randint(0, 255)
             im2[:, :, 1][msk > 0.5] = random.randint(0, 255)
             im2[:, :, 2][msk > 0.5] = random.randint(0, 255)
-            print(label_ref[lab + 1])
+            print(label_ref[lab])
             cv.imshow(str(scr), np.hstack([im, im2]))
             cv.waitKey(0)
 
@@ -152,13 +160,25 @@ if __name__ == '__main__':
 
     device = torch.device(
         'cuda') if torch.cuda.is_available() else torch.device('cpu')
+
     imgSize = [600, 600]
     batchSize = 4
-    epochs = 10
-
+    epochs = 25
     imgs = loadImages('train')
-    model = torchvision.models.detection.maskrcnn_resnet50_fpn_v2(  
-		num_classes=25)
-    
-    trainModel(device, model, imgs)
+
+    model = torchvision.models.detection.maskrcnn_resnet50_fpn_v2(
+        weights='DEFAULT')
+    num_classes = 25
+    in_features = model.roi_heads.box_predictor.cls_score.in_features
+
+    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+
+    in_features_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
+    hidden_layer = 256
+
+    model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask,
+                                                       hidden_layer,
+                                                       num_classes)
+
+    trainModel(device, model, imgs, batchSize, epochs)
     # evalModel(device, model, LABEL_NAMES)
