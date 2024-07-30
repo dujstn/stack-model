@@ -83,12 +83,12 @@ def trainModel(device, model, imgs, batchSize=4, epochs=1):
     """
     Prepares and trains the provided model on the given images
     """
-    model.load_state_dict(torch.load('t1/e14.torch'))
+    model.load_state_dict(torch.load('t1/e46.torch'))
     model.to(device)
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-5)
     model.train()
 
-    for e in range(15, epochs):
+    for e in range(47, epochs):
         random.shuffle(imgs)
         for i in range(0, len(imgs), batchSize):
             images, targets = loadData(imgs, i, i + batchSize)
@@ -125,12 +125,13 @@ def evalModel(device, model, label_ref):
     # model.roi_heads.box_predictor = FastRCNNPredictor(
     #     in_features, num_classes=25)
 
-    model.load_state_dict(torch.load('t1/e14.torch'))
+    model.load_state_dict(torch.load('t1/e29.torch'))
     model.to(device)
     model.eval()
 
-    images = cv.imread('train/3561_slide-083.jpg')
-    # images = cv.imread('test/1317440_slide-011.jpg')
+    # images = cv.imread('train/3561_slide-083.jpg')
+    images = cv.imread('test/1317440_slide-011.jpg')
+    # images = cv.imread('test/203627_slide-019.jpg')
     # images = cv.resize(images, (600, 600), cv.INTER_LINEAR)
     images = torch.as_tensor(images, dtype=torch.float32).unsqueeze(0)
     images = images.swapaxes(1, 3).swapaxes(2, 3)
@@ -146,12 +147,12 @@ def evalModel(device, model, label_ref):
         msk = pred[0]['masks'][i, 0].detach().cpu().numpy()
         scr = pred[0]['scores'][i].detach().cpu().numpy()
         lab = int(pred[0]['labels'][i].detach().cpu().numpy())
-        if scr > 0.5:
+        if scr > 0.75:
             im2[:, :, 0][msk > 0.5] = random.randint(0, 255)
             im2[:, :, 1][msk > 0.5] = random.randint(0, 255)
             im2[:, :, 2][msk > 0.5] = random.randint(0, 255)
             print(label_ref[lab])
-            cv.imshow(str(scr), np.hstack([im, im2]))
+            cv.imshow(str(scr), im2)
             cv.waitKey(0)
 
 
@@ -163,7 +164,7 @@ if __name__ == '__main__':
 
     imgSize = [600, 600]
     batchSize = 4
-    epochs = 25
+    epochs = 50
     imgs = loadImages('train')
 
     model = torchvision.models.detection.maskrcnn_resnet50_fpn_v2(
