@@ -15,7 +15,7 @@ import data_prep
 import calculations
 
 
-def trainModel(device, model, dirs, batchSize=4, epochs=1):
+def trainModel(device: torch.DeviceObjType, model, dirs, batchSize=4, epochs=1):
     """
     Prepares and trains the provided model on the given images.
     """
@@ -87,10 +87,10 @@ def predSample(device, model, label_ref, sample, seePred: bool = False):
     return pred
 
 
-def evalModel(device, model, imgs, label_ref):
+def evalModel(device, model: torch.models.detection.MaskRCNN, imgs: list[str], label_ref: dict, confidence: float):
     """
     Calculates the average mean intersection over union (mIOU) score for the provided model
-    using the validation set.
+    using the validation set, for model performance above the provided confidence value.
     """
     model.to(device)
     model.eval()
@@ -102,10 +102,11 @@ def evalModel(device, model, imgs, label_ref):
     confusion = np.zeros((len(label_ref), len(label_ref)))
     for i in range(len(dirs)):
         pred = predSample(device, model, label_ref, dirs[i])
-        calculations.updateConfusion(pred, truths[i], 0.85, dirs[i], confusion)
-        print(confusion)
+        calculations.updateConfusion(
+            pred, truths[i], confidence, dirs[i], confusion)
 
     score = calculations.getmIOU(confusion)
+    np.savetxt(f'eval_{confidence}_confusion.txt', confusion, delimiter=', ')
     return score
 
 
@@ -142,9 +143,9 @@ if __name__ == '__main__':
 
     # trainModel(device, model, t_imgs_dirs, batchSize, epochs)
     # predSample(device, model, LABEL_NAMES, 'test/1317440_slide-011.jpg', seePred=True)
-    predSample(device, model, LABEL_NAMES, 'val/1307323_slide-004.jpg', seePred=True)
-    # score = evalModel(device, model, v_imgs_dirs, LABEL_NAMES)
-    # print(score)
+    # predSample(device, model, LABEL_NAMES, 'val/1307323_slide-004.jpg', seePred=True)
+    score = evalModel(device, model, v_imgs_dirs, LABEL_NAMES, 0.5)
+    print(score)
 
     # images = cv.imread('train/3561_slide-083.jpg')
     # images = cv.imread('test/1317440_slide-011.jpg')

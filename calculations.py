@@ -30,39 +30,40 @@ def updateConfusion(pred: dict[torch.tensor], truth: dict, confidence: float, di
         else:
             fil[i] = False
     p_msk, p_lab, = p_msk[fil], p_lab[fil]
-    p_msk, t_msk = (p_msk[:, :, :] > 0.5).astype(bool), t_msk.astype(bool)
+    p_msk, t_msk = (p_msk[:, :, :] > confidence).astype(bool), t_msk.astype(bool)
 
     pred_ref = {p_lab[i]: p_msk[i] for i in range(len(p_lab))}
     truth_ref = {t_lab[i]: t_msk[i] for i in range(len(t_lab))}
 
-    # Iterate through each mask and update the confusion matrix
+    # Iterate through each class and update the confusion matrix
     labs = set(np.concatenate((p_lab, t_lab)))
-    i, j = 0, 0
     for lab in labs:
         if lab in pred_ref and lab in truth_ref:
             tp = np.sum(np.logical_and(pred_ref[lab], truth_ref[lab]))
+            tp_zeroes = np.sum(np.logical_and(np.logical_not(pred_ref[lab]), np.logical_not(truth_ref[lab])))
             fp = np.sum(np.logical_and(
                 pred_ref[lab], np.logical_not(truth_ref[lab])))
             fn = np.sum(np.logical_and(
                 np.logical_not(pred_ref[lab]), truth_ref[lab]))
 
+            confusion[0][0] += tp_zeroes
             confusion[lab - 1][lab - 1] += tp
             confusion[0][lab - 1] += fn
             confusion[lab - 1][0] += fp
 
-        elif lab not in pred_ref:
-            fp = np.sum(np.logical_not(truth_ref[lab]))
-            fn = np.sum(truth_ref[lab])
-
-            confusion[0][lab - 1] += fn
-            confusion[lab - 1][0] += fp
-
-        else:
+        elif lab not in truth_ref:
             tp = np.sum(np.logical_not(pred_ref[lab]))
             fp = np.sum(pred_ref[lab])
 
             confusion[0][0] += tp
             confusion[lab - 1][0] += fp
+
+        else:
+            tp = np.sum(np.logical_not(truth_ref[lab]))
+            fn = np.sum(truth_ref[lab])
+
+            confusion[0][lab - 1] += fn
+            confusion[0][0] += tp
 
 
 def getmIOU(confusion: np.ndarray):
@@ -74,7 +75,6 @@ def getmIOU(confusion: np.ndarray):
         fn = np.sum(confusion[i][:]) - tp
 
         class_scores[i] = tp / (tp + fp + fn)
-    print(class_scores)
     class_scores[np.isnan(class_scores)] = 1
     print(class_scores)
 
