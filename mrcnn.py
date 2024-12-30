@@ -118,42 +118,67 @@ def trainModel(device, model, imgs, batchSize=4, epochs=1):
         print(f'Finished epoch {e}')
 
 
+def eval_preprocess(path):
+    image = cv.imread(path)
+    image = cv.resize(image, (900, 600), cv.INTER_LINEAR)
+    image = torch.as_tensor(image, dtype=torch.float32)
+    image = image.permute(2, 0, 1)
+    return image.to(device)
+
+
 def evalModel(device, model, label_ref):
 
-    # in_features = model.roi_heads.box_predictor.cls_score.in_features
-
-    # model.roi_heads.box_predictor = FastRCNNPredictor(
-    #     in_features, num_classes=25)
-
-    model.load_state_dict(torch.load('t1/e29.torch'))
+    model.load_state_dict(torch.load('t1/e49.torch'))
     model.to(device)
     model.eval()
 
-    # images = cv.imread('train/3561_slide-083.jpg')
-    images = cv.imread('test/1317440_slide-011.jpg')
-    # images = cv.imread('test/203627_slide-019.jpg')
-    # images = cv.resize(images, (600, 600), cv.INTER_LINEAR)
-    images = torch.as_tensor(images, dtype=torch.float32).unsqueeze(0)
-    images = images.swapaxes(1, 3).swapaxes(2, 3)
-    images = [image.to(device) for image in images]
+    images = []
+    paths = []
+    for path in os.listdir('test/'):
+        path = f'test/{path}'
+        images.append(eval_preprocess(path))
+        paths.append(path)
 
     with torch.no_grad():
-        pred = model(images)
+        pred = model(images[:20])
 
-    im = images[0].swapaxes(0, 2).swapaxes(
-        0, 1).detach().cpu().numpy().astype(np.uint8)
-    im2 = im.copy()
-    for i in range(len(pred[0]['masks'])):
-        msk = pred[0]['masks'][i, 0].detach().cpu().numpy()
-        scr = pred[0]['scores'][i].detach().cpu().numpy()
-        lab = int(pred[0]['labels'][i].detach().cpu().numpy())
-        if scr > 0.75:
-            im2[:, :, 0][msk > 0.5] = random.randint(0, 255)
-            im2[:, :, 1][msk > 0.5] = random.randint(0, 255)
-            im2[:, :, 2][msk > 0.5] = random.randint(0, 255)
-            print(label_ref[lab])
-            cv.imshow(str(scr), im2)
-            cv.waitKey(0)
+    for i in range(len(pred)):
+        for j in range(len(pred[i]['masks'])):
+            im = images[i].swapaxes(0, 2).swapaxes(
+                0, 1).detach().cpu().numpy().astype(np.uint8)
+            im2 = im.copy()
+            msk = pred[i]['masks'][j, 0].detach().cpu().numpy()
+            scr = pred[i]['scores'][j].detach().cpu().numpy()
+            lab = int(pred[i]['labels'][j].detach().cpu().numpy())
+            pred_label = label_ref[lab]
+            if scr > 0.75:
+
+                red_overlay = np.zeros_like(im2)
+                red_overlay[:, :, 2] = 255
+                alpha = 0.60
+                im2[msk > 0.5] = (1 - alpha) * im2[msk > 0.5] + \
+                    alpha * red_overlay[msk > 0.5]
+
+                cv.rectangle(im2, (675, 475), (900, 600), (255, 0, 0), -1)
+                cv.putText(im2, pred_label, (700, 525),
+                           cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                cv.putText(im2, str(scr), (700, 575),
+                           cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+                try:
+                    os.mkdir(f'output/{paths[i].split('/')[1][:-4]}')
+                except:
+                    pass
+                write_path = f"output/{paths[i].split('/')[1][:-4]}/{
+                    pred_label}.jpg"
+                cv.imwrite(write_path, im2)
+
+        cv.rectangle(im, (675, 475), (900, 600), (255, 0, 0), -1)
+        cv.putText(im, "original", (700, 525),
+                   cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv.imwrite(f"output/{paths[i].split('/')[1][:-4]}/original.jpg", im)
+
+        print(f'Finished {i}th image')
 
 
 if __name__ == '__main__':
@@ -181,5 +206,5 @@ if __name__ == '__main__':
                                                        hidden_layer,
                                                        num_classes)
 
-    trainModel(device, model, imgs, batchSize, epochs)
-    # evalModel(device, model, LABEL_NAMES)
+    # trainModel(device, model, imgs, batchSize, epochs)
+    evalModel(device, model, LABEL_NAMES)
